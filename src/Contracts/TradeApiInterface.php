@@ -10,8 +10,6 @@
 namespace Payment\Contracts;
 
 
-use Payment\Common\TradeRefundData;
-
 interface TradeApiInterface
 {
     /**
@@ -35,9 +33,25 @@ interface TradeApiInterface
 
     /**
      * 退款请求
-     * @param TradeRefundData $data
+     * @param array $data
+     *  - $transaction_id 第三方的订单号
+     *  - $order_no 商户订单号
+     *  - $refund_no 商户退款单号
+     *  - $amount 该笔订单总金额
+     *  - $refund_fee 退款金额
+     *  - $description 额外数据(退款理由)
+     *
      * @return mixed
      * @author helei
      */
-    public function refund(TradeRefundData $data);
+    public function refund(array $data);
+
+    /**
+     * 查询退款订单的状态
+     * @param $value
+     * @param $key
+     * @return mixed
+     * @author helei
+     */
+    public function refundQuery($value, $key);
 }

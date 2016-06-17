@@ -60,4 +60,46 @@ class TradeQueryData extends WxBaseData
 
         return null;
     }
+
+    /**
+     * 设置商户系统内部的退款单号
+     * @param string $value
+     **/
+    public function setOutRefundNo($value)
+    {
+        $this->values['out_refund_no'] = $value;
+    }
+    /**
+     * 获取商户系统内部的退款单号
+     * @return string 值
+     **/
+    public function getOutRefundNo()
+    {
+        if (array_key_exists('out_refund_no', $this->values)) {
+            return $this->values['out_refund_no'];
+        }
+
+        return null;
+    }
+
+    /**
+     * 设置微信退款单号
+     * @param string $value
+     **/
+    public function setRefundId($value)
+    {
+        $this->values['refund_id'] = $value;
+    }
+    /**
+     * 获取微信退款单号
+     * @return string 值
+     **/
+    public function getRefundId()
+    {
+        if (array_key_exists('refund_id', $this->values)) {
+            return $this->values['refund_id'];
+        }
+
+        return null;
+    }
 }

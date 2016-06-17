@@ -9,15 +9,16 @@ namespace Payment\Wxpay;
 
 
 
+use Payment\Common\RefundInfoData;
 use Payment\Contracts\PayNotifyInterface;
 use Payment\Contracts\TradeApiInterface;
 use Payment\Common\PayException;
 use Payment\Common\TradeInfoData;
-use Payment\Common\TradeRefundData;
 use Payment\Utils\Curl;
 use Payment\Utils\DataParser;
 use Payment\Utils\StrUtil;
 use Payment\Wxpay\Data\PayResultData;
+use Payment\Wxpay\Data\RefundData;
 use Payment\Wxpay\Data\TradeQueryData;
 
 class WxTradeApi implements TradeApiInterface
@@ -123,6 +124,10 @@ class WxTradeApi implements TradeApiInterface
             $data->setTransactionId($value);
         } elseif ($key == 'out_trade_no') {
             $data->setOutTradeNo($value);
+        } elseif ($key == 'out_refund_no') {
+            $data->setOutRefundNo($value);
+        } elseif ($key == 'refund_id') {
+            $data->setRefundId('refund_id');
         } else {
             throw new PayException('订单查询，仅支持trade_no  out_trade_no 两种方式');
         }
@@ -190,7 +195,7 @@ class WxTradeApi implements TradeApiInterface
             'subject'   => '',
             'body'   => '',
             'amount'   => bcdiv($data['total_fee'], 100, 2),// 单位设置为元
-            'channel'   => 'ali',
+            'channel'   => 'wx',
             'order_no'   => $data['out_trade_no'],
             'buyer_id'   => $data['openid'],
             'trade_state'   => 'SUCCESS',
@@ -218,12 +223,169 @@ class WxTradeApi implements TradeApiInterface
 
     /**
      * 微信退款api
-     * @param TradeRefundData $data
+     * @param array $data
      * @return mixed
+     * @throws PayException
      * @author helei
      */
-    public function refund(TradeRefundData $data)
+    public function refund(array $data)
     {
-        return '开发中....';
+        try {
+            $refund = $this->buildRefundData($data);
+        } catch (PayException $e) {
+            throw $e;
+        }
+
+        $url = $this->config->getGetewayUrl() . 'secapi/pay/refund';
+
+        // 设置签名
+        $refund->setSign();
+
+        // 获取用于请求的xml数据
+        $xml = DataParser::toXml($refund->getValues());
+
+        // 进行curl请求
+        $curl = new Curl();
+        $ret = $curl->post($xml)->submit($url);
+
+        // 格式化为数据
+        $retArr = DataParser::toArray($ret['body']);
+
+        // 检查数据签名
+        $payResult = new PayResultData();
+        // 验证返回的结果签名
+        if (! $payResult->signVerify($retArr)) {
+            throw new PayException('签名错误');
+        }
+
+        return $this->createRefundInfo($retArr);
+    }
+
+    /**
+     * 构建退款后返回的信息
+     * @param array $data
+     * @return array|null
+     * @author helei
+     */
+    protected function createRefundInfo(array $data)
+    {
+        if ($data['return_code'] !== 'SUCCESS' || $data['result_code'] !== 'SUCCESS') {
+            return null;
+        }
+
+        $info = new RefundInfoData([
+            'transaction_id'    => $data['transaction_id'],
+            'order_no'    => $data['out_trade_no'],
+            'refund_no'    => $data['out_refund_no'],
+            'transaction_refund_no'    => $data['refund_id'],
+            'refund_channel'    => 'wx',
+            'refund_fee'    => $data['refund_fee'],
+            'amount'    => $data['total_fee'],
+        ]);
+
+        return $info->toArray();
+    }
+
+    /**
+     * 构建退款的数据
+     * @param array $data
+     *  - $transaction_id 第三方的订单号
+     *  - $order_no 商户订单号
+     *  - $refund_no 商户退款单号
+     *  - $amount 该笔订单总金额
+     *  - $refund_fee 退款金额
+     *  - $description 额外数据(退款理由)
+     *
+     * @return RefundData
+     * @throws PayException
+     * @author helei
+     */
+    protected function buildRefundData(array $data)
+    {
+        $refund = new RefundData();
+
+        if (key_exists('transaction_id', $data)) {
+            $refund->setTransactionId($data['transaction_id']);
+        } else {
+            if (key_exists('order_no', $data)) {
+                $refund->setOutTradeNo($data['order_no']);
+            } else {
+                throw new PayException('必须设置微信返回的订单号或者商户订单号，二者中的一个');
+            }
+        }
+
+        if (key_exists('refund_no', $data)) {
+            $refund->setOutRefundNo($data['refund_no']);
+        } else {
+            throw new PayException('商户的退款单号必须设置');
+        }
+
+        if (key_exists('amount', $data)) {
+            // 将金额单位设置分
+            $amount = bcmul($data['amount'], 100, 0);
+            if ($amount < 1) {
+                throw new PayException('退款金额不能低于0.01 元');
+            }
+
+            $refund->setTotalFee($amount);
+        } else {
+            throw new PayException('订单的总金额不能为空');
+        }
+
+        if (key_exists('refund_fee', $data)) {
+            // 将金额单位设置分
+            $refundFee = bcmul($data['refund_fee'], 100, 0);
+            if ($refundFee < 1) {
+                throw new PayException('退款金额不能低于0.01 元');
+            }
+            if ($refundFee > $amount) {
+                // 退款金额不能大于订单总金额
+                throw new PayException('退款金额不能大于订单的总金额');
+            }
+
+            $refund->setRefunFee($refundFee);
+        } else {
+            throw new PayException('退款金额不能为空');
+        }
+
+
+        return $refund;
+    }
+
+    /**
+     * 进行退款订单查询
+     * @param $value
+     * @param $key
+     * @return array
+     * @throws PayException
+     * @author helei
+     */
+    public function refundQuery($value, $key)
+    {
+        try {
+            $data = $this->buildQueryData($value, $key);
+        } catch (PayException $e) {
+            throw $e;
+        }
+
+        $url = $this->config->getGetewayUrl() . 'pay/refundquery';
+
+        // 获取用于请求的xml数据
+        $xml = DataParser::toXml($data->getValues());
+
+        // 进行curl请求
+        $curl = new Curl();
+        $ret = $curl->post($xml)->submit($url);
+
+        // 格式化为数据
+        $retArr = DataParser::toArray($ret['body']);
+
+        // 检查数据签名
+        $payResult = new PayResultData();
+        // 验证返回的结果签名
+        if (! $payResult->signVerify($retArr)) {
+            throw new PayException('签名错误');
+        }
+        return $this->createRefundInfo($retArr);
     }
 }

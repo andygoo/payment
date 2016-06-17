@@ -15,7 +15,6 @@ use Payment\Contracts\PayNotifyInterface;
 use Payment\Contracts\TradeApiInterface;
 use Payment\Common\PayException;
 use Payment\Common\TradeInfoData;
-use Payment\Common\TradeRefundData;
 use Payment\Utils\Curl;
 use Payment\Utils\DataParser;
 
@@ -241,12 +240,24 @@ class AliTradeApi implements TradeApiInterface
 
     /**
      * 支付宝退款api
-     * @param TradeRefundData $data
+     * @param array $data
      * @return mixed
      * @author helei
      */
-    public function refund(TradeRefundData $data)
+    public function refund(array $data)
     {
-        return '开发中....';
+        return '开发中......';
+    }
+
+    /**
+     * 查询退款订单信息
+     * @param $value
+     * @param $key
+     * @return string
+     * @author helei
+     */
+    public function refundQuery($value, $key)
+    {
+        return '开发中......';
     }
 }
